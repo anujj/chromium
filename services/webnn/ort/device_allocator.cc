@@ -23,12 +23,16 @@ namespace {
 constexpr size_t kIntelNpuStandardPageSize = 4096;
 
 // Creates memory info for a specific EP. Currently, the device allocator only
-// supports OpenVINO and WebGPU EPs. Returns an invalid memory info if not
-// supported.
+// supports OpenVINO, WebGPU and NvTensorRTRTX EPs. Returns an invalid memory
+// info if not supported.
 ScopedOrtMemoryInfo CreateMemoryInfo(const OrtApi* ort_api,
-                                     base::cstring_view ep_name) {
+                                     const OrtEpDevice* ep_device) {
+  CHECK(ep_device);
+  const char* ep_name = ort_api->EpDevice_EpName(ep_device);
+  CHECK(ep_name);
+  const auto ep_name_view = UNSAFE_BUFFERS(base::cstring_view(ep_name));
   ScopedOrtMemoryInfo memory_info;
-  if (ep_name == kOpenVINOExecutionProvider) {
+  if (ep_name_view == kOpenVINOExecutionProvider) {
     // "OpenVINO_shared" memory info represents shared CPU memory for OpenVINO
     // EP.
     CHECK_STATUS(ort_api->CreateMemoryInfo_V2(
@@ -37,9 +41,25 @@ ScopedOrtMemoryInfo CreateMemoryInfo(const OrtApi* ort_api,
         /*alignment*/ kIntelNpuStandardPageSize, OrtDeviceAllocator,
         ScopedOrtMemoryInfo::Receiver(memory_info).get()));
     CHECK(memory_info.get());
-  } else if (ep_name == kWebGpuExecutionProvider) {
+  } else if (ep_name_view == kWebGpuExecutionProvider) {
     CHECK_STATUS(ort_api->CreateMemoryInfo(
         "WebGPU_Buffer", OrtDeviceAllocator, /*id*/ 0, OrtMemTypeDefault,
+        ScopedOrtMemoryInfo::Receiver(memory_info).get()));
+    CHECK(memory_info.get());
+  } else if (ep_name_view == kNvTensorRTRTXExecutionProvider) {
+    const OrtHardwareDevice* hardware_device = ort_api->EpDevice_Device(ep_device);
+    CHECK(hardware_device);
+    CHECK_STATUS(ort_api->CreateMemoryInfo_V2(
+        "TensorRTRTX", OrtMemoryInfoDeviceType_GPU,
+        /*vendor_id*/ ort_api->HardwareDevice_VendorId(hardware_device),
+        // ORT EP creation for NvTensorRTRTX is currently configured with the EP
+        // device ordinal (for example `device_id: 0`), not the hardware
+        // device/PCI identifier reported by `HardwareDevice_DeviceId()`.
+        // Using the hardware identifier here breaks memory-info matching and
+        // causes ORT to fall back to CPU<->GPU boundary copies.
+        /*device_id*/ 0,
+        OrtDeviceMemoryType_DEFAULT,
+        /*alignment*/ 0, OrtDeviceAllocator,
         ScopedOrtMemoryInfo::Receiver(memory_info).get()));
     CHECK(memory_info.get());
   }
@@ -59,8 +79,7 @@ scoped_refptr<DeviceAllocator> DeviceAllocator::Create(
 
   const char* ep_name = ort_api->EpDevice_EpName(first_selected_device);
   // SAFETY: ORT guarantees that `ep_name` is valid and null-terminated.
-  ScopedOrtMemoryInfo memory_info =
-      CreateMemoryInfo(ort_api, UNSAFE_BUFFERS(base::cstring_view(ep_name)));
+  ScopedOrtMemoryInfo memory_info = CreateMemoryInfo(ort_api, first_selected_device);
   if (!memory_info.is_valid()) {
     return nullptr;
   }
@@ -94,22 +113,35 @@ scoped_refptr<DeviceAllocator> DeviceAllocator::Create(
   CHECK(device_allocator.get());
 
   // SAFETY: ORT guarantees that `ep_name` is valid and null-terminated.
+  const auto ep_name_view = UNSAFE_BUFFERS(base::cstring_view(ep_name));
   return base::MakeRefCounted<DeviceAllocator>(
       base::PassKey<DeviceAllocator>(), std::move(trivial_session),
-      std::move(device_allocator), UNSAFE_BUFFERS(base::cstring_view(ep_name)));
+      std::move(device_allocator), ep_name_view,
+      ep_name_view == kNvTensorRTRTXExecutionProvider
+          ? OrtDeviceMemoryType_DEFAULT
+          : OrtDeviceMemoryType_HOST_ACCESSIBLE);
 }
 
 DeviceAllocator::DeviceAllocator(base::PassKey<DeviceAllocator>,
                                  ScopedOrtSession trivial_session,
                                  ScopedOrtAllocator device_allocator,
-                                 base::cstring_view ep_name)
+                                 base::cstring_view ep_name,
+                                 OrtDeviceMemoryType memory_type)
     : trivial_session_(std::move(trivial_session)),
       device_allocator_(std::move(device_allocator)),
-      ep_name_(ep_name) {}
+      ep_name_(ep_name),
+      memory_type_(memory_type) {}
 
 DeviceAllocator::~DeviceAllocator() = default;
 
 bool DeviceAllocator::ShouldUse(const mojom::TensorInfoPtr& tensor_info) const {
+  if (ep_name_ == kNvTensorRTRTXExecutionProvider) {
+    // Keep KV/cache tensors on the EP device, but leave CPU-visible tensors
+    // on the default allocator to preserve readTensor()/writeTensor() behavior.
+    return !tensor_info->usage.Has(MLTensorUsageFlags::kRead) &&
+           !tensor_info->usage.Has(MLTensorUsageFlags::kWrite);
+  }
+
   // Since the WebGPU EP does not allow clients to access underlying tensors
   // directly, only use it when WebNN developers do not need to access the
   // underlying data.

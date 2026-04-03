@@ -35,7 +35,8 @@ class DeviceAllocator final : public base::RefCounted<DeviceAllocator> {
   DeviceAllocator(base::PassKey<DeviceAllocator>,
                   ScopedOrtSession trivial_session,
                   ScopedOrtAllocator device_allocator,
-                  base::cstring_view ep_name);
+                  base::cstring_view ep_name,
+                  OrtDeviceMemoryType memory_type);
 
   DeviceAllocator(const DeviceAllocator&) = delete;
   DeviceAllocator& operator=(const DeviceAllocator&) = delete;
@@ -46,7 +47,10 @@ class DeviceAllocator final : public base::RefCounted<DeviceAllocator> {
   // usage in `tensor_info`.
   bool ShouldUse(const mojom::TensorInfoPtr& tensor_info) const;
   // Whether the underlying tensor data can be accessed on CPU directly.
-  bool CanAccessOnCPU() const { return ep_name_ != kWebGpuExecutionProvider; }
+  bool CanAccessOnCPU() const {
+    return ep_name_ != kWebGpuExecutionProvider &&
+           memory_type_ != OrtDeviceMemoryType_DEFAULT;
+  }
 
  private:
   friend class base::RefCounted<DeviceAllocator>;
@@ -63,6 +67,7 @@ class DeviceAllocator final : public base::RefCounted<DeviceAllocator> {
 
   // The name of the EP associated with this allocator.
   std::string ep_name_;
+  OrtDeviceMemoryType memory_type_;
 };
 
 }  // namespace webnn::ort

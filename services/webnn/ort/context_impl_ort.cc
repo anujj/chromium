@@ -9,6 +9,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/cstring_view.h"
+#include <cstring>
 #include "services/webnn/ort/graph_impl_ort.h"
 #include "services/webnn/ort/ort_data_type.h"
 #include "services/webnn/ort/ort_status.h"
@@ -119,6 +120,50 @@ OrtHardwareDeviceType ToOrtDeviceType(mojom::Device device_type) {
     case mojom::Device::kNpu:
       return OrtHardwareDeviceType_NPU;
   }
+}
+
+void ZeroInitializeOrtTensor(const OrtApi* ort_api,
+                             const OrtEnv* ort_env,
+                             ONNXTensorElementDataType ort_data_type,
+                             const std::vector<int64_t>& ort_shape,
+                             size_t size,
+                             bool can_access_on_cpu,
+                             OrtValue* tensor) {
+  CHECK(tensor);
+  if (size == 0) {
+    return;
+  }
+
+  if (can_access_on_cpu) {
+    void* tensor_data = nullptr;
+    CHECK_STATUS(ort_api->GetTensorMutableData(tensor, &tensor_data));
+    CHECK(tensor_data);
+    std::memset(tensor_data, 0, size);
+    return;
+  }
+
+  OrtAllocator* allocator = nullptr;
+  CHECK_STATUS(ort_api->GetAllocatorWithDefaultOptions(&allocator));
+  CHECK(allocator);
+
+  ScopedOrtValue zero_tensor;
+  CHECK_STATUS(ort_api->CreateTensorAsOrtValue(
+      allocator, ort_shape.data(), ort_shape.size(), ort_data_type,
+      ScopedOrtValue::Receiver(zero_tensor).get()));
+  CHECK(zero_tensor.get());
+
+  void* zero_tensor_data = nullptr;
+  CHECK_STATUS(ort_api->GetTensorMutableData(zero_tensor.get(), &zero_tensor_data));
+  CHECK(zero_tensor_data);
+  size_t zero_tensor_size = 0;
+  CHECK_STATUS(ort_api->GetTensorSizeInBytes(zero_tensor.get(), &zero_tensor_size));
+  CHECK_EQ(size, zero_tensor_size);
+  std::memset(zero_tensor_data, 0, size);
+
+  const OrtValue* src_tensors[] = {zero_tensor.get()};
+  OrtValue* dst_tensors[] = {tensor};
+  CHECK_STATUS(ort_api->CopyTensors(ort_env, src_tensors, dst_tensors,
+                                    /*stream=*/nullptr, /*num_tensors=*/1));
 }
 
 }  // namespace
@@ -519,11 +564,13 @@ ContextImplOrt::CreateTensorImpl(
 
   OrtAllocator* allocator = nullptr;
   bool can_access_on_cpu = true;
+  scoped_refptr<DeviceAllocator> tensor_device_allocator;
   // Use the device allocator if it's present and should be used. Otherwise, use
   // the default allocator which is CPU based and non-arena.
   if (device_allocator_ && device_allocator_->ShouldUse(tensor_info)) {
     allocator = device_allocator_->get();
     can_access_on_cpu = device_allocator_->CanAccessOnCPU();
+    tensor_device_allocator = device_allocator_;
   } else {
     // `GetAllocatorWithDefaultOptions()` always returns the same pointer to the
     // same default allocator and its returned value should NOT be freed.
@@ -552,9 +599,12 @@ ContextImplOrt::CreateTensorImpl(
   // Invalid values are rejected in GraphBuilder.
   CHECK(base::IsValueInRangeForNumericType<int>(size));
 
+  ZeroInitializeOrtTensor(ort_api, env_->get(), ort_data_type, ort_shape, size,
+                          can_access_on_cpu, tensor.get());
+
   return base::MakeRefCounted<TensorImplOrt>(
-      std::move(receiver), *this, std::move(tensor_info), size,
-      std::move(tensor), can_access_on_cpu, device_allocator_);
+      std::move(receiver), AsWeakPtr(), std::move(tensor_info), size,
+      std::move(tensor), can_access_on_cpu, std::move(tensor_device_allocator));
 }
 
 base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>

@@ -25,16 +25,9 @@ TensorImplOrt::TensorImplOrt(
     scoped_refptr<DeviceAllocator> device_allocator)
     : WebNNTensorImpl(std::move(receiver), context, std::move(tensor_info)),
       device_allocator_((std::move(device_allocator))),
+      can_access_on_cpu_(can_access_on_cpu),
       tensor_(std::move(tensor)),
-      size_(size) {
-  // Initialize the tensor with zeros, otherwise, reading uninitialized memory
-  // will get random values.
-  // TODO(crbug.com/461303833): check whether fast HW clears can be used
-  // instead.
-  if (can_access_on_cpu) {
-    std::ranges::fill(AsSpan(), 0);
-  }
-}
+      size_(size) {}
 
 TensorImplOrt::TensorImplOrt(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
@@ -47,6 +40,7 @@ TensorImplOrt::TensorImplOrt(
                       context,
                       std::move(tensor_info),
                       std::move(representation)),
+      can_access_on_cpu_(false),
       tensor_(std::move(tensor)),
       size_(size) {}
 
@@ -54,6 +48,8 @@ TensorImplOrt::~TensorImplOrt() = default;
 
 base::span<uint8_t> TensorImplOrt::AsSpan() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  CHECK(can_access_on_cpu_)
+      << "[WebNN] ORT tensor is not CPU-accessible.";
 
   void* ort_tensor_raw_data = nullptr;
   CHECK_STATUS(
@@ -68,6 +64,8 @@ base::span<uint8_t> TensorImplOrt::AsSpan() const {
 
 void TensorImplOrt::ReadTensorImpl(ReadTensorCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  CHECK(can_access_on_cpu_)
+      << "[WebNN] ReadTensor() requires a CPU-accessible ORT tensor.";
 
   base::span<const uint8_t> buffer_span = AsSpan();
   CHECK_EQ(PackedByteLength(), buffer_span.size());
@@ -77,6 +75,8 @@ void TensorImplOrt::ReadTensorImpl(ReadTensorCallback callback) {
 
 void TensorImplOrt::WriteTensorImpl(mojo_base::BigBuffer src_buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  CHECK(can_access_on_cpu_)
+      << "[WebNN] WriteTensor() requires a CPU-accessible ORT tensor.";
 
   context_->ReadDataFromBigBufferOrDataPipe(std::move(src_buffer), AsSpan());
 }
