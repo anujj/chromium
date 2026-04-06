@@ -603,7 +603,7 @@ ContextImplOrt::CreateTensorImpl(
                           can_access_on_cpu, tensor.get());
 
   return base::MakeRefCounted<TensorImplOrt>(
-      std::move(receiver), AsWeakPtr(), std::move(tensor_info), size,
+      std::move(receiver), *this, std::move(tensor_info), size,
       std::move(tensor), can_access_on_cpu, std::move(tensor_device_allocator));
 }
 
