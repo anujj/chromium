@@ -52,11 +52,6 @@ ScopedOrtMemoryInfo CreateMemoryInfo(const OrtApi* ort_api,
     CHECK_STATUS(ort_api->CreateMemoryInfo_V2(
         "TensorRTRTX", OrtMemoryInfoDeviceType_GPU,
         /*vendor_id*/ ort_api->HardwareDevice_VendorId(hardware_device),
-        // ORT EP creation for NvTensorRTRTX is currently configured with the EP
-        // device ordinal (for example `device_id: 0`), not the hardware
-        // device/PCI identifier reported by `HardwareDevice_DeviceId()`.
-        // Using the hardware identifier here breaks memory-info matching and
-        // causes ORT to fall back to CPU<->GPU boundary copies.
         /*device_id*/ 0,
         OrtDeviceMemoryType_DEFAULT,
         /*alignment*/ 0, OrtDeviceAllocator,
