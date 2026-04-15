@@ -273,6 +273,7 @@ chromium-metrics-reviews@google.com.
     <variant name="StoragePartition" summary="StoragePartition"/>
     <variant name="Synchronous" summary="Synchronous"/>
     <variant name="TrustTokens" summary="TrustTokens"/>
+    <variant name="WebNNRuntimeCache" summary="WebNNRuntimeCache"/>
   </token>
 <!-- LINT.ThenChange(//content/browser/browsing_data/browsing_data_remover_impl.h:TracingDataType) -->
 

@@ -53,6 +53,7 @@ std::unique_ptr<WebNNContextImpl, OnTaskRunnerDeleter> ContextImplOrt::Create(
     scoped_refptr<gpu::MemoryTracker> memory_tracker,
     scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
     gpu::SharedImageManager* shared_image_manager,
+    mojo::SharedRemote<mojom::RuntimeCacheHost> runtime_cache_host,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     ScopedTrace scoped_trace) {
   DCHECK(owning_task_runner->RunsTasksInCurrentSequence());
@@ -65,7 +66,7 @@ std::unique_ptr<WebNNContextImpl, OnTaskRunnerDeleter> ContextImplOrt::Create(
   OrtHardwareDeviceType device_type = ToOrtDeviceType(options->device);
   const EpWorkarounds ep_workarounds = env->GetEpWorkarounds(device_type);
   scoped_refptr<SessionOptions> session_options =
-      SessionOptions::Create(device_type, env);
+      SessionOptions::Create(device_type, env, std::move(runtime_cache_host));
 
   std::unique_ptr<WebNNContextImpl, OnTaskRunnerDeleter> context_impl(
       new ContextImplOrt(std::move(receiver), std::move(context_provider),

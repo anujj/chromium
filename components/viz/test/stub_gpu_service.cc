@@ -64,7 +64,8 @@ void StubGpuService::CreateVideoEncodeAcceleratorProvider(
 void StubGpuService::BindWebNNContextProvider(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver,
     int32_t client_id,
-    bool is_incognito) {}
+    bool is_incognito,
+    mojo::PendingRemote<webnn::mojom::RuntimeCacheHost> runtime_cache_host) {}
 
 void StubGpuService::GetVideoMemoryUsageStats(
     GetVideoMemoryUsageStatsCallback callback) {}

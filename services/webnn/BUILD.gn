@@ -210,6 +210,8 @@ component("webnn_service") {
       "ort/ort_status.h",
       "ort/platform_functions_ort.cc",
       "ort/platform_functions_ort.h",
+      "ort/runtime_cache_provider_impl.cc",
+      "ort/runtime_cache_provider_impl.h",
       "ort/scoped_ort_types.h",
       "ort/tensor_impl_ort.cc",
       "ort/tensor_impl_ort.h",
