@@ -9,6 +9,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/flat_map.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -25,6 +26,7 @@
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/mojom/features.mojom.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
+#include "services/webnn/public/mojom/webnn_runtime_cache.mojom.h"
 #include "services/webnn/public/mojom/webnn_error.mojom.h"
 #include "services/webnn/public/mojom/webnn_service_introspection.mojom-forward.h"
 #include "services/webnn/scoped_gpu_sequence.h"
@@ -170,9 +172,24 @@ std::unique_ptr<WebNNContextProviderImpl> WebNNContextProviderImpl::Create(
 
 void WebNNContextProviderImpl::BindWebNNContextProvider(
     mojo::PendingReceiver<mojom::WebNNContextProvider> receiver,
-    const WebNNReceiversParams& params) {
+    const WebNNReceiversParams& params,
+    mojo::PendingRemote<mojom::RuntimeCacheHost> runtime_cache_host) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(main_sequence_checker_);
-  provider_receivers_.Add(this, std::move(receiver), params);
+  uint64_t runtime_cache_host_id = params.runtime_cache_host_id;
+  if (runtime_cache_host.is_valid()) {
+    if (runtime_cache_host_id == 0) {
+      runtime_cache_host_id = next_runtime_cache_host_id_++;
+    }
+    runtime_cache_hosts_.insert_or_assign(
+        runtime_cache_host_id,
+        mojo::SharedRemote<mojom::RuntimeCacheHost>(
+            std::move(runtime_cache_host)));
+  }
+
+  provider_receivers_.Add(
+      this, std::move(receiver),
+      WebNNReceiversParams{params.is_incognito, params.client_id,
+                           params.client_tracing_id, runtime_cache_host_id});
 }
 
 void WebNNContextProviderImpl::BindWebNNServiceIntrospection(
@@ -250,6 +267,13 @@ void WebNNContextProviderImpl::CreateWebNNContext(
   // receiver. It is illegal to attempt to call this at any other time, such as
   // from within an asynchronous task or callback posted from a message handler.
   const WebNNReceiversParams params = provider_receivers_.current_context();
+  mojo::SharedRemote<mojom::RuntimeCacheHost> runtime_cache_host;
+  if (params.runtime_cache_host_id != 0) {
+    auto it = runtime_cache_hosts_.find(params.runtime_cache_host_id);
+    if (it != runtime_cache_hosts_.end()) {
+      runtime_cache_host = it->second;
+    }
+  }
 
   // Force context creation to fail if the WebNN GPU feature is disabled, which
   // happens when the GPU process has crashed too many times.
@@ -291,10 +315,11 @@ void WebNNContextProviderImpl::CreateWebNNContext(
   // Task runner used to create the context on gpu sequence.
   // Backends that support multi-threading can use a separate task runner.
   scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner =
-      use_main_thread ? main_thread_task_runner_
-                      : base::ThreadPool::CreateSingleThreadTaskRunner(
-                            {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
-                             base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
+      use_main_thread
+          ? main_thread_task_runner_
+          : base::ThreadPool::CreateSingleThreadTaskRunner(
+                {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+                 base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
 
   auto gpu_sequence = std::make_unique<ScopedGpuSequence>(
       *scheduler_, owning_task_runner, command_buffer_id,
@@ -357,7 +382,7 @@ void WebNNContextProviderImpl::CreateWebNNContext(
           std::move(read_tensor_producer), std::move(read_tensor_consumer),
           std::move(gpu_sequence), std::move(owning_task_runner),
           std::move(receiver), std::move(remote), std::move(callback),
-          params.is_incognito, std::move(memory_tracker),
+          params.is_incognito, std::move(memory_tracker), runtime_cache_host,
           /*ep_package_info=*/{});
       return;
     }
@@ -369,7 +394,7 @@ void WebNNContextProviderImpl::CreateWebNNContext(
         std::move(read_tensor_producer), std::move(read_tensor_consumer),
         std::move(gpu_sequence), std::move(owning_task_runner),
         std::move(receiver), std::move(remote), std::move(callback),
-        params.is_incognito, std::move(memory_tracker)));
+        params.is_incognito, std::move(memory_tracker), runtime_cache_host));
     return;
   }
 #endif  // BUILDFLAG(IS_WIN)
@@ -539,6 +564,7 @@ void WebNNContextProviderImpl::OnOrtEnvCreated(
     CreateWebNNContextCallback callback,
     bool is_incognito,
     scoped_refptr<gpu::MemoryTracker> memory_tracker,
+    mojo::SharedRemote<mojom::RuntimeCacheHost> runtime_cache_host,
     base::expected<scoped_refptr<ort::Environment>, std::string>
         env_creation_results) {
   if (env_creation_results.has_value()) {
@@ -555,7 +581,7 @@ void WebNNContextProviderImpl::OnOrtEnvCreated(
             std::move(env_creation_results.value()), std::move(gpu_sequence),
             std::move(memory_tracker), task_runner,
             base::Unretained(shared_image_manager_.get()),
-            main_thread_task_runner_, std::move(scoped_trace)),
+            runtime_cache_host, main_thread_task_runner_, std::move(scoped_trace)),
         base::BindOnce(&WebNNContextProviderImpl::OnCreateWebNNContextImpl,
                        AsWeakPtr(), std::move(callback), std::move(remote),
                        std::move(write_tensor_producer),
@@ -611,6 +637,7 @@ void WebNNContextProviderImpl::DidEnsureWebNNExecutionProvidersReady(
     CreateWebNNContextCallback callback,
     bool is_incognito,
     scoped_refptr<gpu::MemoryTracker> memory_tracker,
+    mojo::SharedRemote<mojom::RuntimeCacheHost> runtime_cache_host,
     base::flat_map<std::string, mojom::EpPackageInfoPtr> ep_package_info) {
   scoped_trace.AddStep("ort::Environment::GetInstance");
 
@@ -625,7 +652,7 @@ void WebNNContextProviderImpl::DidEnsureWebNNExecutionProvidersReady(
           std::move(read_tensor_producer), std::move(read_tensor_consumer),
           std::move(gpu_sequence), task_runner, std::move(receiver),
           std::move(remote), std::move(callback), is_incognito,
-          std::move(memory_tracker)));
+          std::move(memory_tracker), runtime_cache_host));
 }
 #endif  // BUILDFLAG(IS_WIN)
 

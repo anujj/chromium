@@ -15,10 +15,12 @@
 #include "components/viz/host/gpu_host_impl.h"
 #include "components/viz/host/viz_host_export.h"
 #include "gpu/ipc/common/gpu_disk_cache_type.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "services/viz/public/mojom/gpu.mojom.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
+#include "services/webnn/public/mojom/webnn_runtime_cache.mojom.h"
 
 namespace viz {
 
@@ -60,7 +62,9 @@ class VIZ_HOST_EXPORT GpuClient : public mojom::Gpu {
   base::WeakPtr<GpuClient> GetWeakPtr();
   void BindWebNNContextProvider(
       mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver,
-      bool is_incognito);
+      bool is_incognito,
+      mojo::PendingRemote<webnn::mojom::RuntimeCacheHost> runtime_cache_host =
+          mojo::NullRemote());
 
   void EstablishGpuChannel(EstablishGpuChannelCallback callback) override;
 

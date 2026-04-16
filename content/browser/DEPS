@@ -81,6 +81,8 @@ include_rules = [
   "-services/network",
   "+services/network/public/cpp",
   "+services/network/public/mojom",
+  "+services/webnn/host/runtime_cache_host_impl.h",
+  "+services/webnn/host/runtime_cache_utils.h",
   "-services/cert_verifier",
   "+services/cert_verifier/public/cpp",
   "+services/cert_verifier/public/mojom",
@@ -140,6 +142,8 @@ specific_include_rules = {
     "+services/network/test",
   ],
   "browser_interface_binders\.cc": [
+    "+services/webnn/host/runtime_cache_host_impl.h",
+    "+services/webnn/host/runtime_cache_utils.h",
     "+services/webnn/public/mojom/features.mojom-features.h",
   ],
   "browser_main_loop\.cc": [

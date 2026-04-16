@@ -131,6 +131,8 @@
 #include "services/shape_detection/public/mojom/shape_detection_service.mojom.h"
 #include "services/shape_detection/public/mojom/textdetection.mojom.h"
 #include "services/webnn/host/weights_file_creator_impl.h"
+#include "services/webnn/host/runtime_cache_host_impl.h"
+#include "services/webnn/host/runtime_cache_utils.h"
 #include "services/webnn/public/mojom/features.mojom-features.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #include "storage/browser/quota/quota_internals.mojom.h"
@@ -300,15 +302,36 @@ void BindWebNNContextProviderForRenderFrame(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver) {
   auto* process_host = static_cast<RenderProcessHostImpl*>(host->GetProcess());
   const bool is_incognito = host->GetBrowserContext()->IsOffTheRecord();
+  mojo::PendingRemote<webnn::mojom::RuntimeCacheHost> runtime_cache_host =
+      is_incognito
+          ? mojo::NullRemote()
+          : webnn::CreateRuntimeCacheHost(
+                webnn::GetRuntimeCachePartitionDir(
+                    host->GetBrowserContext()->GetPath(),
+                    host->GetStorageKey().Serialize()),
+                host->GetStorageKey().Serialize());
 #if BUILDFLAG(IS_MAC)
   webnn::InitializeCacheDirAndRun(
       base::BindOnce(&viz::GpuClient::BindWebNNContextProvider,
                      process_host->GetGpuClient()->GetWeakPtr(),
-                     std::move(receiver), is_incognito));
+                     std::move(receiver), is_incognito,
+                     std::move(runtime_cache_host)));
 #else
   process_host->GetGpuClient()->BindWebNNContextProvider(std::move(receiver),
-                                                         is_incognito);
+                                                         is_incognito,
+                                                         std::move(runtime_cache_host));
 #endif
+}
+
+template <typename WorkerHost>
+blink::StorageKey GetWebNNRuntimeCacheStorageKey(WorkerHost* host) {
+  return host->GetWorkerStorageKey();
+}
+
+template <>
+blink::StorageKey GetWebNNRuntimeCacheStorageKey<ServiceWorkerHost>(
+    ServiceWorkerHost* host) {
+  return host->GetBucketStorageKey();
 }
 
 template <typename WorkerHost>
@@ -318,14 +341,26 @@ void BindWebNNContextProviderForWorker(
   auto* process_host =
       static_cast<RenderProcessHostImpl*>(host->GetProcessHost());
   const bool is_incognito = process_host->GetBrowserContext()->IsOffTheRecord();
+  blink::StorageKey storage_key = GetWebNNRuntimeCacheStorageKey(host);
+  std::string serialized_storage_key = storage_key.Serialize();
+  mojo::PendingRemote<webnn::mojom::RuntimeCacheHost> runtime_cache_host =
+      is_incognito
+          ? mojo::NullRemote()
+          : webnn::CreateRuntimeCacheHost(
+                webnn::GetRuntimeCachePartitionDir(
+                    process_host->GetBrowserContext()->GetPath(),
+                    serialized_storage_key),
+                serialized_storage_key);
 #if BUILDFLAG(IS_MAC)
   webnn::InitializeCacheDirAndRun(
       base::BindOnce(&viz::GpuClient::BindWebNNContextProvider,
                      process_host->GetGpuClient()->GetWeakPtr(),
-                     std::move(receiver), is_incognito));
+                     std::move(receiver), is_incognito,
+                     std::move(runtime_cache_host)));
 #else
   process_host->GetGpuClient()->BindWebNNContextProvider(std::move(receiver),
-                                                         is_incognito);
+                                                         is_incognito,
+                                                         std::move(runtime_cache_host));
 #endif
 }
 

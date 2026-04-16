@@ -639,20 +639,23 @@ void GpuServiceImpl::BindWebNNContextProvider(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> pending_receiver,
     int client_id,
     uint64_t client_tracing_id,
-    bool is_incognito) {
+    bool is_incognito,
+    mojo::PendingRemote<webnn::mojom::RuntimeCacheHost> runtime_cache_host) {
   if (!main_runner_->BelongsToCurrentThread()) {
     main_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&GpuServiceImpl::BindWebNNContextProvider,
-                                  weak_ptr_, std::move(pending_receiver),
-                                  client_id, client_tracing_id, is_incognito));
+        FROM_HERE,
+        base::BindOnce(&GpuServiceImpl::BindWebNNContextProvider, weak_ptr_,
+                       std::move(pending_receiver), client_id,
+                       client_tracing_id, is_incognito,
+                       std::move(runtime_cache_host)));
     return;
   }
 
   CreateWebNNContextProviderIfNeeded();
 
   webnn_context_provider_->BindWebNNContextProvider(
-      std::move(pending_receiver),
-      {is_incognito, client_id, client_tracing_id});
+      std::move(pending_receiver), {is_incognito, client_id, client_tracing_id},
+      std::move(runtime_cache_host));
 }
 
 void GpuServiceImpl::CreateWebNNContextProviderIfNeeded() {
@@ -678,10 +681,9 @@ void GpuServiceImpl::BindWebNNServiceIntrospection(
     return;
   }
 
-  CreateWebNNContextProviderIfNeeded();
-
-  webnn_context_provider_->BindWebNNServiceIntrospection(
-      std::move(pending_receiver));
+  // TODO(crbug.com/474940915): Restore WebNN service introspection wiring on
+  // top of the callback-based runtime cache flow.
+  pending_receiver.reset();
 }
 
 void GpuServiceImpl::GetVideoMemoryUsageStats(

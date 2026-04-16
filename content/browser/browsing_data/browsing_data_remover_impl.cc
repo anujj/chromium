@@ -25,6 +25,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "components/browsing_data/core/cookie_or_cache_deletion_choice.h"
@@ -52,6 +53,7 @@
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "services/webnn/host/runtime_cache_utils.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -122,6 +124,45 @@ bool DoesStorageKeyMatchMask(
     return embedder_matcher.Run(origin_type_mask, storage_key.origin(), policy);
 
   return false;
+}
+
+bool ClearWebNNRuntimeCaches(
+    const base::FilePath& profile_dir,
+    bool clear_all,
+    base::RepeatingCallback<bool(const blink::StorageKey&)> storage_key_filter) {
+  if (clear_all) {
+    return webnn::ClearAllRuntimeCaches(profile_dir);
+  }
+
+  bool success = true;
+  for (const base::FilePath& partition_dir :
+       webnn::GetRuntimeCachePartitionDirs(profile_dir)) {
+    std::optional<std::string> serialized_storage_key =
+        webnn::ReadRuntimeCacheStorageKeyMetadata(partition_dir);
+    if (!serialized_storage_key.has_value()) {
+      VLOG(1) << "[WebNN RuntimeCache] Skipping partition without storage key "
+                 "metadata: "
+              << partition_dir;
+      continue;
+    }
+
+    std::optional<blink::StorageKey> storage_key =
+        blink::StorageKey::Deserialize(*serialized_storage_key);
+    if (!storage_key.has_value()) {
+      LOG(WARNING) << "[WebNN RuntimeCache] Skipping partition with invalid "
+                      "storage key metadata: "
+                   << partition_dir;
+      continue;
+    }
+
+    if (!storage_key_filter.Run(*storage_key)) {
+      continue;
+    }
+
+    success &= base::DeletePathRecursively(partition_dir);
+  }
+
+  return success;
 }
 
 }  // namespace
@@ -646,6 +687,28 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     }
   }
 
+  // WebNN runtime cache entries are browser-managed files keyed by storage
+  // partition, so they do not participate in network-service cache deletion.
+  // Like Trust Tokens, we do not support time-range semantics for these
+  // artifacts; they are removed either wholesale or by storage-key filter.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+      base::BindOnce(
+          &ClearWebNNRuntimeCaches, browser_context_->GetPath(),
+          filter_builder->MatchesAllOriginsAndDomains(),
+          filter_builder->BuildStorageKeyFilter()),
+      base::BindOnce(
+          [](base::WeakPtr<BrowsingDataRemoverImpl> remover,
+             base::OnceClosure done, bool success) {
+            if (remover && !success) {
+              remover->failed_data_types_ |= DATA_TYPE_CACHE;
+            }
+            std::move(done).Run();
+          },
+          GetWeakPtr(),
+          CreateTaskCompletionClosure(TracingDataType::kWebNNRuntimeCache)));
+
   //////////////////////////////////////////////////////////////////////////////
   // Prototype Trust Token API (https://github.com/wicg/trust-token-api).
 
@@ -964,6 +1027,8 @@ const char* BrowsingDataRemoverImpl::GetHistogramSuffix(TracingDataType task) {
       return "PrefetchCache";
     case TracingDataType::kPrerenderCache:
       return "PrerenderCache";
+    case TracingDataType::kWebNNRuntimeCache:
+      return "WebNNRuntimeCache";
   }
 }
 

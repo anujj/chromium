@@ -49,6 +49,7 @@
 #include "services/viz/privileged/mojom/viz_main.mojom.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #include "services/webnn/public/mojom/webnn_service_introspection.mojom.h"
+#include "services/webnn/public/mojom/webnn_runtime_cache.mojom.h"
 #include "skia/buildflags.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/gfx/gpu_extra_info.h"
@@ -205,7 +206,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
           pending_receiver,
       int client_id,
       uint64_t client_tracing_id,
-      bool is_incognito) override;
+      bool is_incognito,
+      mojo::PendingRemote<webnn::mojom::RuntimeCacheHost>
+          runtime_cache_host) override;
 
   void BindWebNNServiceIntrospection(
       mojo::PendingReceiver<webnn::mojom::WebNNServiceIntrospection>

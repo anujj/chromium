@@ -8,12 +8,14 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
+#include "mojo/public/cpp/bindings/shared_remote.h"
 #include "services/webnn/ort/device_allocator.h"
 #include "services/webnn/ort/environment.h"
 #include "services/webnn/ort/ort_session_options.h"
 #include "services/webnn/ort/scoped_ort_types.h"
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/cpp/webnn_types.h"
+#include "services/webnn/public/mojom/webnn_runtime_cache.mojom.h"
 #include "services/webnn/webnn_context_impl.h"
 
 namespace webnn {
@@ -38,6 +40,7 @@ class ContextImplOrt final : public WebNNContextImpl {
       scoped_refptr<gpu::MemoryTracker> memory_tracker,
       scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
       gpu::SharedImageManager* shared_image_manager,
+      mojo::SharedRemote<mojom::RuntimeCacheHost> runtime_cache_host,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       ScopedTrace scoped_trace);
 

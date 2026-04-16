@@ -4,6 +4,9 @@
 
 source_set("host") {
   sources = [
+    "runtime_cache_host_impl.cc",
+    "runtime_cache_host_impl.h",
+    "runtime_cache_utils.h",
     "weights_file_creator_impl.cc",
     "weights_file_creator_impl.h",
     "weights_file_provider.cc",
@@ -25,7 +28,6 @@ source_set("host") {
     deps += [
       "//services/webnn:webnn_switches",
       "//services/webnn/public/cpp:win",
-      "//services/webnn/public/mojom",
       "//third_party/windows_app_sdk_headers",
     ]
   }

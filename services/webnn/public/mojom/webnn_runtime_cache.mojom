@@ -1,0 +1,33 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module webnn.mojom;
+
+// Interface for runtime cache persistence, implemented in the browser process.
+// The GPU process (where ORT + TRT-RTX run) cannot open files due to sandbox
+// restrictions. This interface allows the GPU process to request cache
+// load/save operations that the browser process performs on its behalf,
+// with origin-based storage partitioning for privacy isolation.
+//
+// Each RuntimeCacheHost instance is scoped to a single origin/storage
+// partition, determined at WebNN context creation time.
+interface RuntimeCacheHost {
+  // Load a previously saved runtime cache blob.
+  // |cache_key| is a deterministic, model-specific key (e.g.,
+  // "<model_hash>_<subgraph_name>").
+  // Returns null if no cache exists for the given key.
+  // Marked [Sync] because the EP ABI blocks on the result during session
+  // creation. This is acceptable since session creation is already blocking.
+  [Sync]
+  LoadCache(string cache_key) => (array<uint8>? data);
+
+  // Save a runtime cache blob for later retrieval.
+  // |cache_key| is the same deterministic key used for LoadCache.
+  // |data| is the serialized TRT-RTX runtime cache (IHostMemory blob).
+  SaveCache(string cache_key, array<uint8> data) => (bool success);
+
+  // Delete all cached entries for this origin/partition.
+  // Called when browsing data is cleared.
+  ClearCache() => (bool success);
+};

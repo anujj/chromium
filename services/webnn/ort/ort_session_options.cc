@@ -4,15 +4,19 @@
 
 #include "services/webnn/ort/ort_session_options.h"
 
+#include <cstdint>
+#include <string>
 #include <string_view>
 
 #include "base/command_line.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "services/webnn/ort/environment.h"
 #include "services/webnn/ort/logging.h"
 #include "services/webnn/ort/ort_status.h"
 #include "services/webnn/ort/platform_functions_ort.h"
+#include "services/webnn/ort/runtime_cache_provider_impl.h"
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/mojom/webnn_error.mojom.h"
 #include "services/webnn/public/mojom/webnn_service_introspection.mojom.h"
@@ -106,7 +110,8 @@ std::optional<GraphOptimizationLevel> StringToOrtGraphOptimizationLevel(
 // static
 scoped_refptr<SessionOptions> SessionOptions::Create(
     OrtHardwareDeviceType device_type,
-    scoped_refptr<Environment> env) {
+    scoped_refptr<Environment> env,
+    mojo::SharedRemote<mojom::RuntimeCacheHost> cache_remote) {
   ScopedTrace scoped_trace("SessionOptions::Create");
 
   scoped_trace.AddStep("Create session options");
@@ -178,18 +183,54 @@ scoped_refptr<SessionOptions> SessionOptions::Create(
         /*config_value=*/config_entry.value.c_str()));
   }
 
-  return base::MakeRefCounted<SessionOptions>(base::PassKey<SessionOptions>(),
-                                              std::move(session_options),
-                                              device_type, std::move(env));
+  // Create runtime cache provider if a Mojo remote was supplied by the
+  // browser process. The provider's raw pointer is passed as a session config
+  // entry so the EP ABI can pick it up during initialization.
+  std::unique_ptr<RuntimeCacheProviderImpl> cache_provider;
+  if (cache_remote.is_bound()) {
+    cache_provider =
+        std::make_unique<RuntimeCacheProviderImpl>(std::move(cache_remote));
+    std::string context_str = base::NumberToString(
+        reinterpret_cast<uintptr_t>(cache_provider.get()));
+    std::string load_fn_str = base::NumberToString(
+        reinterpret_cast<uintptr_t>(&RuntimeCacheProviderImpl::LoadCallback));
+    std::string save_fn_str = base::NumberToString(
+        reinterpret_cast<uintptr_t>(&RuntimeCacheProviderImpl::SaveCallback));
+    std::string release_fn_str = base::NumberToString(
+        reinterpret_cast<uintptr_t>(&RuntimeCacheProviderImpl::ReleaseCallback));
+    CHECK_STATUS(ort_api->AddSessionConfigEntry(
+        session_options.get(),
+        "ep.nvtensorrtrtxexecutionprovider.nv_runtime_cache_context",
+        context_str.c_str()));
+    CHECK_STATUS(ort_api->AddSessionConfigEntry(
+        session_options.get(),
+        "ep.nvtensorrtrtxexecutionprovider.nv_runtime_cache_load_fn",
+        load_fn_str.c_str()));
+    CHECK_STATUS(ort_api->AddSessionConfigEntry(
+        session_options.get(),
+        "ep.nvtensorrtrtxexecutionprovider.nv_runtime_cache_save_fn",
+        save_fn_str.c_str()));
+    CHECK_STATUS(ort_api->AddSessionConfigEntry(
+        session_options.get(),
+        "ep.nvtensorrtrtxexecutionprovider.nv_runtime_cache_release_fn",
+        release_fn_str.c_str()));
+  }
+
+  return base::MakeRefCounted<SessionOptions>(
+      base::PassKey<SessionOptions>(), std::move(session_options), device_type,
+      std::move(env), std::move(cache_provider));
 }
 
-SessionOptions::SessionOptions(base::PassKey<SessionOptions>,
-                               ScopedOrtSessionOptions session_options,
-                               OrtHardwareDeviceType device_type,
-                               scoped_refptr<Environment> env)
+SessionOptions::SessionOptions(
+    base::PassKey<SessionOptions>,
+    ScopedOrtSessionOptions session_options,
+    OrtHardwareDeviceType device_type,
+    scoped_refptr<Environment> env,
+    std::unique_ptr<RuntimeCacheProviderImpl> cache_provider)
     : session_options_(std::move(session_options)),
       device_type_(device_type),
-      env_(std::move(env)) {
+      env_(std::move(env)),
+      cache_provider_(std::move(cache_provider)) {
   CHECK(session_options_.get());
 
   base::span<const OrtEpDevice* const> registered_ep_devices =

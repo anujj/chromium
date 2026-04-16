@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/component_export.h"
+#include "base/containers/flat_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/types/optional_ref.h"
@@ -16,6 +17,7 @@
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_info.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/shared_remote.h"
 #include "services/viz/privileged/mojom/gl/gpu_host.mojom.h"
@@ -23,6 +25,7 @@
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/mojom/webnn_context.mojom.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
+#include "services/webnn/public/mojom/webnn_runtime_cache.mojom.h"
 #include "services/webnn/public/mojom/webnn_service_introspection.mojom.h"
 #include "services/webnn/webnn_context_impl.h"
 
@@ -75,13 +78,16 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
     const bool is_incognito;
     const int32_t client_id;
     const uint64_t client_tracing_id;
+    const uint64_t runtime_cache_host_id = 0;
   };
 
   // Called to add a another WebNNContextProvider receiver to this
   // existing `WebNNContextProviderImpl` instance.
   void BindWebNNContextProvider(
       mojo::PendingReceiver<mojom::WebNNContextProvider> receiver,
-      const WebNNReceiversParams& params);
+      const WebNNReceiversParams& params,
+      mojo::PendingRemote<mojom::RuntimeCacheHost> runtime_cache_host =
+          mojo::NullRemote());
 
   void BindWebNNServiceIntrospection(
       mojo::PendingReceiver<mojom::WebNNServiceIntrospection> receiver);
@@ -216,6 +222,8 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
                        CreateWebNNContextCallback callback,
                        bool is_incognito,
                        scoped_refptr<gpu::MemoryTracker> memory_tracker,
+                       mojo::SharedRemote<mojom::RuntimeCacheHost>
+                           runtime_cache_host,
                        base::expected<scoped_refptr<ort::Environment>,
                                       std::string> env_creation_results);
 
@@ -233,6 +241,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       CreateWebNNContextCallback callback,
       bool is_incognito,
       scoped_refptr<gpu::MemoryTracker> memory_tracker,
+      mojo::SharedRemote<mojom::RuntimeCacheHost> runtime_cache_host,
       base::flat_map<std::string, mojom::EpPackageInfoPtr> ep_package_info);
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -269,6 +278,11 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   // Contexts created by this provider. When a context disconnects,
   // it will destroy itself by removing itself from this set.
   WebNNContextImplSet context_impls_ GUARDED_BY_CONTEXT(main_sequence_checker_);
+
+  base::flat_map<uint64_t, mojo::SharedRemote<mojom::RuntimeCacheHost>>
+      runtime_cache_hosts_ GUARDED_BY_CONTEXT(main_sequence_checker_);
+  uint64_t next_runtime_cache_host_id_ GUARDED_BY_CONTEXT(main_sequence_checker_) =
+      1;
 
   // Specifies the thread on which the GPU scheduler should run tasks.
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
