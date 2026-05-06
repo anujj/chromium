@@ -71,7 +71,7 @@ chromium-metrics-reviews@google.com.
   <int value="18" label="kPrefetchCache"/>
   <int value="19" label="kPrerenderCache"/>
   <int value="20" label="kWebNNRuntimeCache"/>
- </enum>
+</enum>
 
 <!-- LINT.ThenChange(//tools/metrics/histograms/metadata/history/histograms.xml:History.ClearBrowsingData.Duration.Task.Task) -->
 
@@ -168,18 +168,6 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Both"/>
 </enum>
 
-<enum name="EmbeddingsExtractionCancelled">
-  <int value="0" label="Unknown"/>
-  <int value="1" label="TabHelper.DidFinishLoad"/>
-  <int value="2" label="TabHelper.ExtractPassages.Url"/>
-  <int value="3" label="TabHelper.ExtractPassages.Reschedule"/>
-  <int value="4" label="TabHelper.ExtractPassagesWithHistoryData.Results"/>
-  <int value="5" label="TabHelper.ExtractPassagesWithHistoryData.Time"/>
-  <int value="6" label="TabHelper.ExtractPassagesWithHistoryData.Guid"/>
-  <int value="7" label="Service.RetrievePassages"/>
-  <int value="8" label="Service.RetrievePassagesWithUrlData"/>
-</enum>
-
 <enum name="EmbeddingsModelInfoStatus">
   <int value="0" label="Unknown"/>
   <int value="1" label="Model info is valid"/>
@@ -207,6 +195,8 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Answer citation clicked"/>
   <int value="6" label="Other history result clicked"/>
 </enum>
+
+<!-- LINT.IfChange(HistoryClustersInitialState) -->
 
 <enum name="HistoryClustersInitialState">
   <summary>
@@ -236,6 +226,8 @@ chromium-metrics-reviews@google.com.
     The Side Panel HistoryClusters UI was opened from side panel toolbar button.
   </int>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/history_clusters/history_clusters_metrics_logger.h:HistoryClustersInitialState) -->
 
 <enum name="HistoryDatabaseVersion">
 <!-- Enum definitions must have a least one value, but we won't define beyond
