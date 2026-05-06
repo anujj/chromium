@@ -81,8 +81,6 @@ include_rules = [
   "-services/network",
   "+services/network/public/cpp",
   "+services/network/public/mojom",
-  "+services/webnn/host/runtime_cache_host_impl.h",
-  "+services/webnn/host/runtime_cache_utils.h",
   "-services/cert_verifier",
   "+services/cert_verifier/public/cpp",
   "+services/cert_verifier/public/mojom",

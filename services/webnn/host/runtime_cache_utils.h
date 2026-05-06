@@ -27,10 +27,9 @@ inline base::FilePath GetRuntimeCacheRootDir(const base::FilePath& profile_dir) 
 // key. The serialized storage key is hashed to create a filesystem-safe
 // directory name.
 //
-// Example:
-//   profile_dir = "C:\Users\foo\AppData\Local\Chromium\User Data\Default"
-//   storage_key = "https://example.com^0https://example.com"
-//   result = "C:\...\Default\WebNN\RuntimeCache\a1b2c3d4e5..."
+// For example, the serialized storage key
+// "https://example.com^0https://example.com" maps to a SHA-1 hex directory
+// name under the WebNN runtime cache root.
 inline base::FilePath GetRuntimeCachePartitionDir(
     const base::FilePath& profile_dir,
     const std::string& storage_key) {
@@ -60,10 +59,6 @@ inline std::vector<base::FilePath> GetRuntimeCachePartitionDirs(
 // Deletes all WebNN runtime cache data for all origins.
 // Intended to be called by BrowsingDataRemover when the user
 // clears "Cached images and files" or all browsing data.
-//
-// TODO(webnn): Register this with BrowsingDataRemoverImpl via
-// BrowsingDataRemoverImpl::RemoveImpl() for
-// BrowsingDataRemover::DATA_TYPE_CACHE.
 inline bool ClearAllRuntimeCaches(const base::FilePath& profile_dir) {
   base::FilePath cache_root = GetRuntimeCacheRootDir(profile_dir);
   return !base::PathExists(cache_root) ||
