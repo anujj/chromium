@@ -17,11 +17,7 @@
 namespace webnn {
 
 RuntimeCacheHostImpl::RuntimeCacheHostImpl(base::FilePath partition_dir)
-    : partition_dir_(std::move(partition_dir)) {
-  if (!base::DirectoryExists(partition_dir_)) {
-    base::CreateDirectory(partition_dir_);
-  }
-}
+    : partition_dir_(std::move(partition_dir)) {}
 
 RuntimeCacheHostImpl::~RuntimeCacheHostImpl() = default;
 
@@ -84,8 +80,13 @@ void RuntimeCacheHostImpl::SaveCache(const std::string& cache_key,
     return;
   }
 
-  if (!base::DirectoryExists(partition_dir_)) {
-    base::CreateDirectory(partition_dir_);
+  if (!base::DirectoryExists(partition_dir_) &&
+      !base::CreateDirectory(partition_dir_)) {
+    LOG(WARNING) << "[WebNN RuntimeCacheHost] Failed to create cache "
+                    "partition directory: "
+                 << partition_dir_;
+    std::move(callback).Run(false);
+    return;
   }
 
   bool success = base::WriteFile(
@@ -104,7 +105,8 @@ void RuntimeCacheHostImpl::SaveCache(const std::string& cache_key,
 }
 
 void RuntimeCacheHostImpl::ClearCache(ClearCacheCallback callback) {
-  bool success = base::DeletePathRecursively(partition_dir_);
+  bool success = !base::PathExists(partition_dir_) ||
+                 base::DeletePathRecursively(partition_dir_);
   if (success) {
     VLOG(1) << "[WebNN RuntimeCacheHost] Cleared cache for partition: "
             << partition_dir_;

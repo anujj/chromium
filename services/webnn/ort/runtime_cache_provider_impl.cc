@@ -29,6 +29,7 @@ bool RuntimeCacheProviderImpl::LoadCallback(void* context,
                                             void** data,
                                             size_t* size) {
   CHECK(context);
+  CHECK(cache_key);
   CHECK(data);
   CHECK(size);
 
@@ -63,6 +64,8 @@ bool RuntimeCacheProviderImpl::SaveCallback(void* context,
                                             const void* data,
                                             size_t size) {
   CHECK(context);
+  CHECK(cache_key);
+  CHECK(data || size == 0);
   return static_cast<RuntimeCacheProviderImpl*>(context)->SaveCache(cache_key,
                                                                     data, size);
 }

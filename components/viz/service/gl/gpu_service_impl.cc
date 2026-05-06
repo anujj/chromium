@@ -681,9 +681,10 @@ void GpuServiceImpl::BindWebNNServiceIntrospection(
     return;
   }
 
-  // TODO(crbug.com/474940915): Restore WebNN service introspection wiring on
-  // top of the callback-based runtime cache flow.
-  pending_receiver.reset();
+  CreateWebNNContextProviderIfNeeded();
+
+  webnn_context_provider_->BindWebNNServiceIntrospection(
+      std::move(pending_receiver));
 }
 
 void GpuServiceImpl::GetVideoMemoryUsageStats(

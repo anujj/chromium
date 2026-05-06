@@ -6,9 +6,7 @@
 #define SERVICES_WEBNN_HOST_RUNTIME_CACHE_UTILS_H_
 
 #include <string>
-#include <vector>
 
-#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/hash/sha1.h"
@@ -36,24 +34,6 @@ inline base::FilePath GetRuntimeCachePartitionDir(
   std::string storage_key_hash =
       base::HexEncode(base::SHA1Hash(base::as_byte_span(storage_key)));
   return GetRuntimeCacheRootDir(profile_dir).AppendASCII(storage_key_hash);
-}
-
-inline std::vector<base::FilePath> GetRuntimeCachePartitionDirs(
-    const base::FilePath& profile_dir) {
-  std::vector<base::FilePath> partition_dirs;
-  base::FilePath cache_root = GetRuntimeCacheRootDir(profile_dir);
-  if (!base::DirectoryExists(cache_root)) {
-    return partition_dirs;
-  }
-
-  base::FileEnumerator enumerator(cache_root, /*recursive=*/false,
-                                  base::FileEnumerator::DIRECTORIES);
-  for (base::FilePath path = enumerator.Next(); !path.empty();
-       path = enumerator.Next()) {
-    partition_dirs.push_back(std::move(path));
-  }
-
-  return partition_dirs;
 }
 
 // Deletes all WebNN runtime cache data for all origins.

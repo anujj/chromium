@@ -144,6 +144,9 @@ specific_include_rules = {
     "+services/webnn/host/runtime_cache_utils.h",
     "+services/webnn/public/mojom/features.mojom-features.h",
   ],
+  "browsing_data_remover_impl\.cc": [
+    "+services/webnn/host/runtime_cache_utils.h",
+  ],
   "browser_main_loop\.cc": [
     # TODO(crbug.com/40672800): Remove.
     "+services/network/transitional_url_loader_factory_owner.h",

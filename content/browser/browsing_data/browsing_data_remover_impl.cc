@@ -54,10 +54,10 @@
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
-#include "services/webnn/host/runtime_cache_utils.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
+#include "services/webnn/host/runtime_cache_utils.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
 #include "url/gurl.h"
@@ -692,29 +692,31 @@ void BrowsingDataRemoverImpl::RemoveImpl(
     }
   }
 
-  // WebNN runtime cache entries are browser-managed files keyed by storage
-  // partition, so they do not participate in network-service cache deletion.
-  // Like Trust Tokens, we do not support time-range semantics for these
-  // artifacts; they are removed either wholesale or when a filtered removal can
-  // derive the corresponding storage-key hash without reading plaintext
-  // metadata from disk.
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE,
-      {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      base::BindOnce(
-          &ClearWebNNRuntimeCaches, browser_context_->GetPath(),
-          filter_builder->MatchesAllOriginsAndDomains(),
-          GetWebNNRuntimeCacheStorageKeysToClear(*filter_builder)),
-      base::BindOnce(
-          [](base::WeakPtr<BrowsingDataRemoverImpl> remover,
-             base::OnceClosure done, bool success) {
-            if (remover && !success) {
-              remover->failed_data_types_ |= DATA_TYPE_CACHE;
-            }
-            std::move(done).Run();
-          },
-          GetWeakPtr(),
-          CreateTaskCompletionClosure(TracingDataType::kWebNNRuntimeCache)));
+  if (remove_mask & DATA_TYPE_CACHE) {
+    // WebNN runtime cache entries are browser-managed files keyed by storage
+    // partition, so they do not participate in network-service cache deletion.
+    // Like Trust Tokens, we do not support time-range semantics for these
+    // artifacts; they are removed either wholesale or when a filtered removal
+    // can derive the corresponding storage-key hash without reading plaintext
+    // metadata from disk.
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE,
+        {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+        base::BindOnce(
+            &ClearWebNNRuntimeCaches, browser_context_->GetPath(),
+            filter_builder->MatchesAllOriginsAndDomains(),
+            GetWebNNRuntimeCacheStorageKeysToClear(*filter_builder)),
+        base::BindOnce(
+            [](base::WeakPtr<BrowsingDataRemoverImpl> remover,
+               base::OnceClosure done, bool success) {
+              if (remover && !success) {
+                remover->failed_data_types_ |= DATA_TYPE_CACHE;
+              }
+              std::move(done).Run();
+            },
+            GetWeakPtr(),
+            CreateTaskCompletionClosure(TracingDataType::kWebNNRuntimeCache)));
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Prototype Trust Token API (https://github.com/wicg/trust-token-api).
