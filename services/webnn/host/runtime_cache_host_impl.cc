@@ -13,22 +13,13 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
-#include "services/webnn/host/runtime_cache_utils.h"
 
 namespace webnn {
 
-RuntimeCacheHostImpl::RuntimeCacheHostImpl(
-    base::FilePath partition_dir,
-    std::string storage_key)
+RuntimeCacheHostImpl::RuntimeCacheHostImpl(base::FilePath partition_dir)
     : partition_dir_(std::move(partition_dir)) {
   if (!base::DirectoryExists(partition_dir_)) {
     base::CreateDirectory(partition_dir_);
-  }
-  if (!storage_key.empty() &&
-      !WriteRuntimeCacheStorageKeyMetadata(partition_dir_, storage_key)) {
-    LOG(WARNING)
-        << "[WebNN RuntimeCacheHost] Failed to persist storage key metadata at "
-        << partition_dir_;
   }
 }
 
@@ -44,8 +35,7 @@ mojo::PendingRemote<mojom::RuntimeCacheHost> CreateRuntimeCacheHost(
   mojo::PendingRemote<mojom::RuntimeCacheHost> remote;
   auto receiver = remote.InitWithNewPipeAndPassReceiver();
   mojo::MakeSelfOwnedReceiver(
-      std::make_unique<RuntimeCacheHostImpl>(std::move(partition_dir),
-                                             std::move(storage_key)),
+      std::make_unique<RuntimeCacheHostImpl>(std::move(partition_dir)),
       std::move(receiver));
   return remote;
 }
@@ -147,7 +137,8 @@ base::FilePath RuntimeCacheHostImpl::GetCacheFilePath(
     }
   }
 
-  if (cache_key.empty() || cache_key == "." || cache_key == "..") {
+  if (cache_key.empty() || cache_key == "." || cache_key == ".." ||
+      cache_key.front() == '.') {
     LOG(WARNING) << "[WebNN RuntimeCacheHost] Invalid cache key: " << cache_key;
     return base::FilePath();
   }
@@ -181,10 +172,6 @@ void RuntimeCacheHostImpl::EnforceSizeCap() {
                                   base::FileEnumerator::FILES);
   for (base::FilePath path = enumerator.Next(); !path.empty();
        path = enumerator.Next()) {
-    if (path.BaseName().AsUTF8Unsafe() ==
-        kWebNNRuntimeCacheStorageKeyMetadataFile) {
-      continue;
-    }
     base::FileEnumerator::FileInfo info = enumerator.GetInfo();
     int64_t file_size = info.GetSize();
     total_size += file_size;

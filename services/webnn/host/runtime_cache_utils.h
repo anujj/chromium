@@ -5,7 +5,6 @@
 #ifndef SERVICES_WEBNN_HOST_RUNTIME_CACHE_UTILS_H_
 #define SERVICES_WEBNN_HOST_RUNTIME_CACHE_UTILS_H_
 
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,8 +18,6 @@ namespace webnn {
 
 // The subdirectory within the user profile for WebNN runtime cache storage.
 inline constexpr char kWebNNRuntimeCacheDir[] = "WebNN/RuntimeCache";
-inline constexpr char kWebNNRuntimeCacheStorageKeyMetadataFile[] =
-    ".storage_key";
 
 inline base::FilePath GetRuntimeCacheRootDir(const base::FilePath& profile_dir) {
   return profile_dir.AppendASCII(kWebNNRuntimeCacheDir);
@@ -40,34 +37,6 @@ inline base::FilePath GetRuntimeCachePartitionDir(
   std::string storage_key_hash =
       base::HexEncode(base::SHA1Hash(base::as_byte_span(storage_key)));
   return GetRuntimeCacheRootDir(profile_dir).AppendASCII(storage_key_hash);
-}
-
-inline base::FilePath GetRuntimeCacheStorageKeyMetadataPath(
-    const base::FilePath& partition_dir) {
-  return partition_dir.AppendASCII(kWebNNRuntimeCacheStorageKeyMetadataFile);
-}
-
-inline bool WriteRuntimeCacheStorageKeyMetadata(
-    const base::FilePath& partition_dir,
-    const std::string& storage_key) {
-  if (!base::CreateDirectory(partition_dir)) {
-    return false;
-  }
-
-  return base::WriteFile(GetRuntimeCacheStorageKeyMetadataPath(partition_dir),
-                         storage_key);
-}
-
-inline std::optional<std::string> ReadRuntimeCacheStorageKeyMetadata(
-    const base::FilePath& partition_dir) {
-  std::string storage_key;
-  if (!base::ReadFileToString(
-          GetRuntimeCacheStorageKeyMetadataPath(partition_dir), &storage_key) ||
-      storage_key.empty()) {
-    return std::nullopt;
-  }
-
-  return storage_key;
 }
 
 inline std::vector<base::FilePath> GetRuntimeCachePartitionDirs(

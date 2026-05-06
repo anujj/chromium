@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -126,40 +127,44 @@ bool DoesStorageKeyMatchMask(
   return false;
 }
 
+std::vector<std::string> GetWebNNRuntimeCacheStorageKeysToClear(
+    BrowsingDataFilterBuilder& filter_builder) {
+  std::vector<std::string> storage_keys;
+
+  // Runtime-cache partition directories are one-way hashes of serialized
+  // StorageKeys. Without persisting plaintext StorageKey metadata, we can only
+  // directly derive cache directories for simple first-party origin filters.
+  if (filter_builder.HasStorageKey() ||
+      filter_builder.GetMode() != BrowsingDataFilterBuilder::Mode::kDelete ||
+      !filter_builder.GetRegisterableDomains().empty()) {
+    return storage_keys;
+  }
+
+  for (const url::Origin& origin : filter_builder.GetOrigins()) {
+    storage_keys.push_back(
+        blink::StorageKey::CreateFirstParty(origin).Serialize());
+  }
+
+  return storage_keys;
+}
+
 bool ClearWebNNRuntimeCaches(
     const base::FilePath& profile_dir,
     bool clear_all,
-    base::RepeatingCallback<bool(const blink::StorageKey&)> storage_key_filter) {
+    std::vector<std::string> storage_keys_to_clear) {
   if (clear_all) {
     return webnn::ClearAllRuntimeCaches(profile_dir);
   }
 
   bool success = true;
-  for (const base::FilePath& partition_dir :
-       webnn::GetRuntimeCachePartitionDirs(profile_dir)) {
-    std::optional<std::string> serialized_storage_key =
-        webnn::ReadRuntimeCacheStorageKeyMetadata(partition_dir);
-    if (!serialized_storage_key.has_value()) {
-      VLOG(1) << "[WebNN RuntimeCache] Skipping partition without storage key "
-                 "metadata: "
-              << partition_dir;
-      continue;
-    }
+  for (const std::string& storage_key : storage_keys_to_clear) {
+    success &= webnn::ClearRuntimeCacheForStorageKey(profile_dir, storage_key);
+  }
 
-    std::optional<blink::StorageKey> storage_key =
-        blink::StorageKey::Deserialize(*serialized_storage_key);
-    if (!storage_key.has_value()) {
-      LOG(WARNING) << "[WebNN RuntimeCache] Skipping partition with invalid "
-                      "storage key metadata: "
-                   << partition_dir;
-      continue;
-    }
-
-    if (!storage_key_filter.Run(*storage_key)) {
-      continue;
-    }
-
-    success &= base::DeletePathRecursively(partition_dir);
+  if (storage_keys_to_clear.empty()) {
+    VLOG(1) << "[WebNN RuntimeCache] Skipping filtered runtime-cache "
+               "deletion because cache directories intentionally do not "
+               "persist plaintext storage-key metadata.";
   }
 
   return success;
@@ -690,14 +695,16 @@ void BrowsingDataRemoverImpl::RemoveImpl(
   // WebNN runtime cache entries are browser-managed files keyed by storage
   // partition, so they do not participate in network-service cache deletion.
   // Like Trust Tokens, we do not support time-range semantics for these
-  // artifacts; they are removed either wholesale or by storage-key filter.
+  // artifacts; they are removed either wholesale or when a filtered removal can
+  // derive the corresponding storage-key hash without reading plaintext
+  // metadata from disk.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
       base::BindOnce(
           &ClearWebNNRuntimeCaches, browser_context_->GetPath(),
           filter_builder->MatchesAllOriginsAndDomains(),
-          filter_builder->BuildStorageKeyFilter()),
+          GetWebNNRuntimeCacheStorageKeysToClear(*filter_builder)),
       base::BindOnce(
           [](base::WeakPtr<BrowsingDataRemoverImpl> remover,
              base::OnceClosure done, bool success) {

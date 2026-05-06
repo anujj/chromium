@@ -27,15 +27,14 @@ namespace webnn {
 //
 // Directory layout:
 //   <profile_dir>/WebNN/RuntimeCache/<partition_key>/
-//     ├── <cache_key_1>
-//     ├── <cache_key_2>
-//     └── ...
+//     <cache_key_1>
+//     <cache_key_2>
+//     ...
 class RuntimeCacheHostImpl : public mojom::RuntimeCacheHost {
  public:
   // |partition_dir| is the storage-partition specific directory for this
-  // instance. |storage_key| is persisted as metadata so browsing-data removal
-  // can later map this partition back to its owning storage key.
-  RuntimeCacheHostImpl(base::FilePath partition_dir, std::string storage_key);
+  // instance. The serialized storage key is not persisted to disk.
+  explicit RuntimeCacheHostImpl(base::FilePath partition_dir);
 
   ~RuntimeCacheHostImpl() override;
 
@@ -66,6 +65,8 @@ class RuntimeCacheHostImpl : public mojom::RuntimeCacheHost {
 
 // Creates a browser-process RuntimeCacheHost and returns a remote endpoint that
 // can be passed to the GPU process.
+// |storage_key| is used only to reject unpartitioned callers; |partition_dir|
+// is already derived from the serialized storage key by the browser process.
 mojo::PendingRemote<mojom::RuntimeCacheHost> CreateRuntimeCacheHost(
     base::FilePath partition_dir,
     std::string storage_key);
