@@ -5,11 +5,12 @@
 #include "services/webnn/ort/runtime_cache_provider_impl.h"
 
 #include <cstdlib>
-#include <cstring>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 
@@ -47,7 +48,11 @@ bool RuntimeCacheProviderImpl::LoadCallback(void* context,
     return false;
   }
 
-  std::memcpy(buffer, bytes.data(), bytes.size());
+  // The EP ABI returns ownership through a raw pointer, so the allocation must
+  // stay ABI-compatible. Convert the trusted allocation to a bounded span before
+  // copying the cache bytes.
+  UNSAFE_BUFFERS(base::span(static_cast<uint8_t*>(buffer), bytes.size()))
+      .copy_from_nonoverlapping(bytes);
   *data = buffer;
   *size = bytes.size();
   return true;
@@ -111,8 +116,11 @@ bool RuntimeCacheProviderImpl::SaveCache(const char* cache_key,
     return false;
   }
 
-  std::vector<uint8_t> blob(static_cast<const uint8_t*>(data),
-                            static_cast<const uint8_t*>(data) + size);
+  // `data` comes from the EP ABI as a raw pointer plus size. Keep the unsafe
+  // boundary explicit and immediately copy into Chromium-owned storage.
+  auto cache_blob =
+      UNSAFE_BUFFERS(base::span(static_cast<const uint8_t*>(data), size));
+  std::vector<uint8_t> blob(cache_blob.begin(), cache_blob.end());
 
   VLOG(1) << "[WebNN RuntimeCache] Saving cache for key: " << cache_key
           << " (" << size << " bytes)";
